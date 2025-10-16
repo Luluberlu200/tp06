@@ -3,7 +3,7 @@ name: Simple CI - Compose (front and back)
 on:
   push:
     branches: [ "main" ]
-  pull_request:
+  pull_request: {}
 
 jobs:
   build-and-test:
