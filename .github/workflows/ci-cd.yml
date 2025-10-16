@@ -1,3 +1,46 @@
+name: Simple CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build backend image
+        run: docker build -t image_back ./tp02-back
+
+      - name: Build frontend image
+        run: docker build -t image_front ./tp02-front
+
+      - name: Start compose
+        run: |
+          docker compose up -d
+
+      - name: Wait for backend
+        run: |
+          for i in 1 2 3 4 5 6; do
+            if curl -fsS http://localhost:3000 >/dev/null 2>&1; then
+              echo "backend ready"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "backend did not start" >&2
+          docker compose logs api || true
+          exit 1
+
+      - name: Teardown
+        if: always()
+        run: docker compose down -v || true
 name: Simple CI - Compose (front and back)
 
 on:
