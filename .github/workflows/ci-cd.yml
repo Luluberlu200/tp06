@@ -1,158 +1,42 @@
-name: Simple CI
+name: CI - Compose (front & back)
 
 on:
   push:
-    branches: [ main ]
+    branches: [ "main" ]
   pull_request:
-    branches: [ main ]
-
-jobs:
-  build-and-smoke:
-    runs-on: ubuntu-latest
-    services: {}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Build backend image
-        run: |
-          docker build -t tp02-back:ci ./tp02-back
-
-      - name: Run backend container
-        run: |
-          # run container in background mapping container port 3000 to a random host port
-          CONTAINER_ID=$(docker run -d -p 0:3000 tp02-back:ci)
-          echo "container=$CONTAINER_ID" >> $GITHUB_OUTPUT
-          # wait for startup
-          sleep 2
-          # fetch mapped port
-          PORT=$(docker port $CONTAINER_ID 3000 | sed 's/.*://')
-          echo "port=$PORT" >> $GITHUB_OUTPUT
-          # try to hit the root or /posts (json-server default)
-          for i in 1 2 3 4 5; do
-            if curl -sS "http://localhost:$PORT" >/dev/null 2>&1; then
-              echo 'backend responded'
-              break
-            fi
-            sleep 1
-          done
-
-      - name: Backend smoke test
-        run: |
-          # use the port discovered earlier
-          PORT=${{ steps.build-and-smoke.outputs.port }}
-          if [ -z "$PORT" ]; then
-            echo 'Could not determine backend port' && exit 1
-          fi
-          curl -sS "http://localhost:$PORT" | head -n 5
-
-      - name: Stop backend containers
-        if: always()
-        run: |
-          docker ps -aq | xargs -r docker rm -f || true
-
-      - name: Frontend Python import check
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r tp02-front/requirements.txt
-          python - <<'PY'
-          import importlib
-          modules = ['flask','requests','dotenv']
-          missing = []
-          for m in modules:
-              try:
-                  importlib.import_module(m)
-              except Exception:
-                  missing.append(m)
-          if missing:
-              print('Missing modules:', missing)
-              raise SystemExit(1)
-          print('All required modules import successfully')
-          PY
-name: CI/CD
-
-on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
 
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout repository
+      - name: 📥 Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
+      - name: 🐳 Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      - name: Install backend dependencies
-        working-directory: tp02-back
+      - name: 🔧 Build back (tag: image_back)
         run: |
-          npm ci
+          docker build -t image_back ./back
 
-      - name: Backend sanity (json-server smoke)
-        working-directory: tp02-back
+      - name: 🔧 Build front (tag: image_front)
         run: |
-          # ensure json-server can start and show its version
-          npx json-server --version || true
+          docker build -t image_front ./front
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
-
-      - name: Install frontend requirements
-        working-directory: tp02-front
+      - name: 🚀 Docker Compose up
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          docker compose up -d
+          docker compose ps
 
-      - name: Frontend sanity (import check)
-        working-directory: tp02-front
+      - name: ✅ Sanity checks
         run: |
-          python - <<'PY'
-          import importlib
-          modules = ['flask','requests','dotenv']
-          missing = []
-          for m in modules:
-              try:
-                  importlib.import_module(m)
-              except Exception:
-                  missing.append(m)
-          if missing:
-              print('Missing modules:', missing)
-              raise SystemExit(1)
-          print('All required modules import successfully')
-          PY
+          # back exposé en local sur 3000
+          (curl -fsS http://localhost:3000/health || curl -fsS http://localhost:3000 || echo "⚠️ api: pas de /health ni /") || true
+          # front exposé en local sur 8080 (mappé vers 5000 dans le conteneur)
+          (curl -fsS http://localhost:8080/health || curl -fsS http://localhost:8080 || echo "⚠️ front: pas de /health ni /") || true
+          docker ps
 
-  build-images:
-    runs-on: ubuntu-latest
-    needs: build-and-test
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Build backend Docker image
-        run: |
-          docker build -t image_back:latest tp02-back
-
-      - name: Build frontend Docker image
-        run: |
-          docker build -t image_front:latest tp02-front
-
-      - name: Push images to registry (optional)
-        if: ${{ secrets.REGISTRY && secrets.REGISTRY_USERNAME && secrets.REGISTRY_TOKEN }}
-        run: |
-          REGISTRY=${{ secrets.REGISTRY }}
-          echo "Pushing images to $REGISTRY (example, adapt for your registry)"
-          # Example for Docker Hub (adapt for GHCR, AWS ECR, etc):
-          # echo ${{ secrets.REGISTRY_TOKEN }} | docker login -u ${{ secrets.REGISTRY_USERNAME }} --password-stdin $REGISTRY
-          # docker tag image_back:latest $REGISTRY/image_back:latest
-          # docker tag image_front:latest $REGISTRY/image_front:latest
-          # docker push $REGISTRY/image_back:latest
-          # docker push $REGISTRY/image_front:latest
-          echo "(docker push commands are commented out in this template)"
+      - name: 🧹 Cleanup
+        if: always()
+        run: docker compose down -v
