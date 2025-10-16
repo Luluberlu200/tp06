@@ -13,10 +13,18 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Build backend image
-        run: docker build -t image_back ./tp02-back
+        run: |
+          echo "pwd: $(pwd)"
+          echo "ls -la:" && ls -la
+          echo "ls tp02-back:" && ls -la tp02-back || true
+          docker build -t image_back ./tp02-back
 
       - name: Build frontend image
-        run: docker build -t image_front ./tp02-front
+        run: |
+          echo "pwd: $(pwd)"
+          echo "ls -la:" && ls -la
+          echo "ls tp02-front:" && ls -la tp02-front || true
+          docker build -t image_front ./tp02-front
 
       - name: Start compose
         run: docker compose up -d
