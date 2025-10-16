@@ -1,4 +1,4 @@
-name: Simple CI - Compose (front & back)
+name: Simple CI - Compose (front and back)
 
 on:
   push:
@@ -10,26 +10,26 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 📥 Checkout
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 🐳 Set up Docker Buildx
+      - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: 🔧 Build back (tag: image_back)
+      - name: Build back (tag: image_back)
         run: |
           docker build -t image_back:ci ./tp02-back
 
-      - name: 🔧 Build front (tag: image_front)
+      - name: Build front (tag: image_front)
         run: |
           docker build -t image_front:ci ./tp02-front
 
-      - name: 🚀 Docker Compose up
+      - name: Docker Compose up
         run: |
           docker compose up -d
           docker compose ps
 
-      - name: ⏳ Wait for services (retry)
+      - name: Wait for services (retry)
         run: |
           set -e
           # wait up to 30s for backend on port 3000
@@ -64,7 +64,7 @@ jobs:
             exit 1
           fi
 
-      - name: ✅ Sanity checks (show top of responses)
+      - name: Sanity checks (show top of responses)
         run: |
           echo "--- BACKEND (root) ---"
           curl -fsS http://localhost:3000 | head -n 20 || true
@@ -72,6 +72,6 @@ jobs:
           curl -fsS http://localhost:8080 | head -n 20 || true
           docker ps --filter "status=running"
 
-      - name: 🧹 Cleanup
+      - name: Cleanup
         if: always()
         run: docker compose down -v || true
