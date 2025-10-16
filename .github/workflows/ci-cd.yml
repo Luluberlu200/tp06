@@ -4,6 +4,12 @@ on:
   push:
     branches: ["main"]
   pull_request: {}
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to deploy'
+        required: true
+        default: 'develop'
 
 jobs:
   build:
@@ -45,3 +51,20 @@ jobs:
       - name: Teardown
         if: always()
         run: docker compose down -v || true
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    steps:
+      - name: Trigger Coolify deployment
+        env:
+          COOLIFY_WEBHOOK: ${{ secrets.COOLIFY_WEBHOOK }}
+          TOKEN: ${{ secrets.TOKEN }}
+          BRANCH: ${{ github.event.inputs.branch }}
+        run: |
+          echo "Triggering Coolify deployment for branch $BRANCH"
+          curl --location --request POST "$COOLIFY_WEBHOOK" \
+            --header "Authorization: Bearer $TOKEN" \
+            --header "Content-Type: application/json" \
+            --data '{"branch":"'$BRANCH'"}'
