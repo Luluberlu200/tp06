@@ -1,3 +1,74 @@
+name: Simple CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-smoke:
+    runs-on: ubuntu-latest
+    services: {}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build backend image
+        run: |
+          docker build -t tp02-back:ci ./tp02-back
+
+      - name: Run backend container
+        run: |
+          # run container in background mapping container port 3000 to a random host port
+          CONTAINER_ID=$(docker run -d -p 0:3000 tp02-back:ci)
+          echo "container=$CONTAINER_ID" >> $GITHUB_OUTPUT
+          # wait for startup
+          sleep 2
+          # fetch mapped port
+          PORT=$(docker port $CONTAINER_ID 3000 | sed 's/.*://')
+          echo "port=$PORT" >> $GITHUB_OUTPUT
+          # try to hit the root or /posts (json-server default)
+          for i in 1 2 3 4 5; do
+            if curl -sS "http://localhost:$PORT" >/dev/null 2>&1; then
+              echo 'backend responded'
+              break
+            fi
+            sleep 1
+          done
+
+      - name: Backend smoke test
+        run: |
+          # use the port discovered earlier
+          PORT=${{ steps.build-and-smoke.outputs.port }}
+          if [ -z "$PORT" ]; then
+            echo 'Could not determine backend port' && exit 1
+          fi
+          curl -sS "http://localhost:$PORT" | head -n 5
+
+      - name: Stop backend containers
+        if: always()
+        run: |
+          docker ps -aq | xargs -r docker rm -f || true
+
+      - name: Frontend Python import check
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r tp02-front/requirements.txt
+          python - <<'PY'
+          import importlib
+          modules = ['flask','requests','dotenv']
+          missing = []
+          for m in modules:
+              try:
+                  importlib.import_module(m)
+              except Exception:
+                  missing.append(m)
+          if missing:
+              print('Missing modules:', missing)
+              raise SystemExit(1)
+          print('All required modules import successfully')
+          PY
 name: CI/CD
 
 on:
@@ -74,12 +145,14 @@ jobs:
           docker build -t image_front:latest tp02-front
 
       - name: Push images to registry (optional)
-        if: env.REGISTRY != '' && secrets.REGISTRY_USERNAME && secrets.REGISTRY_TOKEN
-        env:
-          REGISTRY: ${{ secrets.REGISTRY }}
+        if: ${{ secrets.REGISTRY && secrets.REGISTRY_USERNAME && secrets.REGISTRY_TOKEN }}
         run: |
-          echo "$REGISTRY" | grep -q . || exit 1
-          echo "$REGISTRY"/image_back:latest
-          echo "$REGISTRY"/image_front:latest
-          echo "Log in and push images (skipped in template)"
-          # You can add docker login and push commands here. Use secrets.REGISTRY_USERNAME and secrets.REGISTRY_TOKEN
+          REGISTRY=${{ secrets.REGISTRY }}
+          echo "Pushing images to $REGISTRY (example, adapt for your registry)"
+          # Example for Docker Hub (adapt for GHCR, AWS ECR, etc):
+          # echo ${{ secrets.REGISTRY_TOKEN }} | docker login -u ${{ secrets.REGISTRY_USERNAME }} --password-stdin $REGISTRY
+          # docker tag image_back:latest $REGISTRY/image_back:latest
+          # docker tag image_front:latest $REGISTRY/image_front:latest
+          # docker push $REGISTRY/image_back:latest
+          # docker push $REGISTRY/image_front:latest
+          echo "(docker push commands are commented out in this template)"
