@@ -23,98 +23,46 @@ jobs:
 
       - name: Start compose
         run: |
-          docker compose up -d
+          name: Simple CI
 
-      - name: Wait for backend
-        run: |
-          for i in 1 2 3 4 5 6; do
-            if curl -fsS http://localhost:3000 >/dev/null 2>&1; then
-              echo "backend ready"
-              exit 0
-            fi
-            sleep 5
-          done
-          echo "backend did not start" >&2
-          docker compose logs api || true
-          exit 1
+          on:
+            push:
+              branches: ["main"]
+            pull_request: {}
 
-      - name: Teardown
-        if: always()
-        run: docker compose down -v || true
-name: Simple CI - Compose (front and back)
+          jobs:
+            build:
+              runs-on: ubuntu-latest
+              steps:
+                - name: Checkout
+                  uses: actions/checkout@v4
 
-on:
-  push:
-    branches: [ "main" ]
-  pull_request: {}
+                - name: Set up Docker Buildx
+                  uses: docker/setup-buildx-action@v3
 
-jobs:
-  build-and-test:
-    runs-on: ubuntu-latest
+                - name: Build backend image
+                  run: docker build -t image_back ./tp02-back
 
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+                - name: Build frontend image
+                  run: docker build -t image_front ./tp02-front
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+                - name: Start compose
+                  run: |
+                    docker compose up -d
 
-      - name: Build back (tag: image_back)
-        run: |
-          docker build -t image_back:ci ./tp02-back
+                - name: Wait for backend
+                  run: |
+                    for i in 1 2 3 4 5 6; do
+                      if curl -fsS http://localhost:3000 >/dev/null 2>&1; then
+                        echo "backend ready"
+                        exit 0
+                      fi
+                      sleep 5
+                    done
+                    echo "backend did not start" >&2
+                    docker compose logs api || true
+                    exit 1
 
-      - name: Build front (tag: image_front)
-        run: |
-          docker build -t image_front:ci ./tp02-front
-
-      - name: Docker Compose up
-        run: |
-          docker compose up -d
-          docker compose ps
-
-      - name: Wait for services (retry)
-        run: |
-          set -e
-          # wait up to 30s for backend on port 3000
-          backend_ok=1
-          for i in 1 2 3 4 5 6; do
-            if curl -fsS http://localhost:3000 >/dev/null 2>&1; then
-              backend_ok=0
-              break
-            fi
-            echo "waiting for backend... ($i)"
-            sleep 5
-          done
-          if [ $backend_ok -ne 0 ]; then
-            echo "Backend did not respond on port 3000" >&2
-            docker compose logs api || true
-            exit 1
-          fi
-
-          # wait up to 30s for frontend on port 8080
-          front_ok=1
-          for i in 1 2 3 4 5 6; do
-            if curl -fsS http://localhost:8080 >/dev/null 2>&1; then
-              front_ok=0
-              break
-            fi
-            echo "waiting for front... ($i)"
-            sleep 5
-          done
-          if [ $front_ok -ne 0 ]; then
-            echo "Front did not respond on port 8080" >&2
-            docker compose logs front || true
-            exit 1
-          fi
-
-      - name: Sanity checks (show top of responses)
-        run: |
-          echo "--- BACKEND (root) ---"
-          curl -fsS http://localhost:3000 | head -n 20 || true
-          echo "--- FRONT (root) ---"
-          curl -fsS http://localhost:8080 | head -n 20 || true
-          docker ps --filter "status=running"
-
-      - name: Cleanup
-        if: always()
-        run: docker compose down -v || true
+                - name: Teardown
+                  if: always()
+                  run: docker compose down -v || true
